@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="handheldfriendly" content="true">
+    <meta name="format-detection" content="telephone=no">
+    <title>Проверка PDF чеков</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
+            <h1>Проверка PDF чеков</h1>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-area" id="dropZone">
+                <div class="upload-content">
+                    <div class="upload-icon">📄</div>
+                    <button class="upload-button" id="uploadButton">Выбрать PDF файл</button>
+                    <p class="upload-text">или перетащите файл сюда</p>
+                </div>
+            </div>
+            <input type="file" id="fileInput" accept=".pdf" hidden>
+        </div>
+
+        <div class="banks-section">
+            <h2>Поддерживаемые банки</h2>
+            <div class="banks-grid">
+                <!-- Банки будут добавлены через JavaScript -->
+            </div>
+        </div>
+
+        <div class="history-section">
+            <h2>История проверок</h2>
+            <div class="history-list" id="historyList">
+                <!-- История будет добавлена через JavaScript -->
+            </div>
+        </div>
+
+        <div id="loading" class="loading-overlay">
+            <div class="loading-spinner"></div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

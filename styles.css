@@ -60,8 +60,9 @@ h1 {
 }
 
 .upload-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
+    font-size: 64px;
+    margin-bottom: 1rem;
+    line-height: 1;
 }
 
 .upload-button {
@@ -122,9 +123,9 @@ h2 {
 }
 
 .bank-icon {
-    font-size: 24px;
-    display: block;
-    margin-bottom: 8px;
+    font-size: 32px;
+    margin-bottom: 0.5rem;
+    line-height: 1;
 }
 
 .bank-name {
@@ -250,11 +251,21 @@ h2 {
 }
 
 .error {
-    padding: 15px;
-    background: #ff7675;
+    background: var(--error);
     color: white;
-    border-radius: 8px;
-    text-align: center;
+    padding: 16px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.error-icon {
+    font-size: 24px;
+}
+
+.error-message {
+    font-weight: 500;
 }
 
 .check-validator-container {

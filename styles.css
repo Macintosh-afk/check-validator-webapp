@@ -194,3 +194,65 @@ h2 {
         gap: 12px;
     }
 }
+
+.validation-result {
+    padding: 20px;
+    border-radius: 10px;
+    margin: 20px 0;
+    box-shadow: 0 0 15px rgba(0,0,0,0.1);
+}
+
+.validation-result.valid {
+    background: linear-gradient(145deg, #e3ffe3, #d1ffd1);
+    border: 1px solid #90EE90;
+}
+
+.validation-result.invalid {
+    background: linear-gradient(145deg, #ffe3e3, #ffd1d1);
+    border: 1px solid #FFB6B6;
+}
+
+.score {
+    font-size: 24px;
+    font-weight: bold;
+    margin: 15px 0;
+    text-align: center;
+}
+
+.details {
+    margin: 20px 0;
+    padding: 15px;
+    background: rgba(255,255,255,0.7);
+    border-radius: 8px;
+}
+
+.details p {
+    margin: 10px 0;
+    padding: 5px 10px;
+    border-left: 3px solid #007bff;
+}
+
+.recommendations {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(255,255,255,0.7);
+    border-radius: 8px;
+}
+
+.recommendations ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.recommendations li {
+    margin: 5px 0;
+    color: #d63031;
+}
+
+.error {
+    padding: 15px;
+    background: #ff7675;
+    color: white;
+    border-radius: 8px;
+    text-align: center;
+}

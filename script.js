@@ -638,6 +638,276 @@ class SberbankAdvancedValidator {
             overallScore: this.calculateValidationScore(validationResult)
         };
     }
+
+    async validatePaymentMethod(pdfData) {
+        const paymentMethodResult = {
+            method: null,
+            details: {},
+            isValid: false
+        };
+
+        // Паттерны для определения метода оплаты
+        const patterns = {
+            sbp: {
+                patterns: [
+                    /Система быстрых платежей/i,
+                    /СБП/i,
+                    /Перевод по СБП/i,
+                    /ПЕРЕВОД СБП/i
+                ],
+                type: 'СБП (Система быстрых платежей)'
+            },
+            card: {
+                patterns: [
+                    /Карта \*{4}\d{4}/i,
+                    /ОПЛАТА ПО КАРТЕ/i,
+                    /Payment by card/i,
+                    /CARD/i
+                ],
+                type: 'Оплата картой'
+            },
+            phoneNumber: {
+                patterns: [
+                    /Перевод на телефон/i,
+                    /ПЕРЕВОД НА ТЕЛ\./i,
+                    /Перевод по номеру телефона/i,
+                    /PHONE TRANSFER/i
+                ],
+                type: 'Перевод по номеру телефона'
+            },
+            accountTransfer: {
+                patterns: [
+                    /Перевод на счет/i,
+                    /ПЕРЕВОД НА СЧЕТ/i,
+                    /Account transfer/i
+                ],
+                type: 'Перевод на счёт'
+            },
+            qrCode: {
+                patterns: [
+                    /Оплата по QR-коду/i,
+                    /QR-код/i,
+                    /ОПЛАТА ПО QR/i
+                ],
+                type: 'Оплата по QR-коду'
+            }
+        };
+
+        // Проверяем текст чека на наличие паттернов
+        for (const [methodKey, methodData] of Object.entries(patterns)) {
+            for (const pattern of methodData.patterns) {
+                if (pattern.test(pdfData.text)) {
+                    paymentMethodResult.method = methodData.type;
+                    paymentMethodResult.isValid = true;
+
+                    // Извлекаем дополнительные детали в зависимости от метода
+                    switch (methodKey) {
+                        case 'sbp':
+                            paymentMethodResult.details = await this.extractSBPDetails(pdfData.text);
+                            break;
+                        case 'card':
+                            paymentMethodResult.details = this.extractCardDetails(pdfData.text);
+                            break;
+                        case 'phoneNumber':
+                            paymentMethodResult.details = this.extractPhoneDetails(pdfData.text);
+                            break;
+                        case 'accountTransfer':
+                            paymentMethodResult.details = this.extractAccountDetails(pdfData.text);
+                            break;
+                        case 'qrCode':
+                            paymentMethodResult.details = await this.extractQRDetails(pdfData);
+                            break;
+                    }
+                    break;
+                }
+            }
+            if (paymentMethodResult.isValid) break;
+        }
+
+        return paymentMethodResult;
+    }
+
+    async extractSBPDetails(text) {
+        const details = {
+            bankName: null,
+            recipientName: null,
+            recipientBank: null,
+            transactionId: null
+        };
+
+        // Извлекаем название банка получателя
+        const bankMatch = text.match(/Банк получателя:\s*([^\n]+)/i);
+        if (bankMatch) details.bankName = bankMatch[1].trim();
+
+        // Извлекаем имя получателя
+        const nameMatch = text.match(/Получатель:\s*([^\n]+)/i);
+        if (nameMatch) details.recipientName = nameMatch[1].trim();
+
+        // Извлекаем ID транзакции СБП
+        const transactionMatch = text.match(/ID операции СБП:\s*(\d+)/i);
+        if (transactionMatch) details.transactionId = transactionMatch[1];
+
+        return details;
+    }
+
+    extractCardDetails(text) {
+        const details = {
+            cardNumber: null,
+            cardType: null,
+            authCode: null,
+            terminal: null
+        };
+
+        // Извлекаем маскированный номер карты
+        const cardMatch = text.match(/(?:КАРТА|CARD)\s*\*{4}(\d{4})/i);
+        if (cardMatch) details.cardNumber = `****${cardMatch[1]}`;
+
+        // Определяем тип карты
+        if (text.includes('MIR')) details.cardType = 'МИР';
+        else if (text.includes('VISA')) details.cardType = 'VISA';
+        else if (text.includes('MASTERCARD')) details.cardType = 'Mastercard';
+
+        // Извлекаем код авторизации
+        const authMatch = text.match(/AUTH\.CODE:\s*(\d+)/i);
+        if (authMatch) details.authCode = authMatch[1];
+
+        // Извлекаем номер терминала
+        const terminalMatch = text.match(/TERMINAL:\s*(\d+)/i);
+        if (terminalMatch) details.terminal = terminalMatch[1];
+
+        return details;
+    }
+
+    extractPhoneDetails(text) {
+        const details = {
+            phoneNumber: null,
+            recipientName: null,
+            bankName: null
+        };
+
+        // Извлекаем замаскированный номер телефона
+        const phoneMatch = text.match(/(?:ТЕЛ|PHONE)[\s:]*\+?7\s*\*{3}\s*\*{3}\s*(\d{2}\s*\d{2})/i);
+        if (phoneMatch) details.phoneNumber = `+7 *** *** ${phoneMatch[1]}`;
+
+        // Извлекаем имя получателя
+        const nameMatch = text.match(/Получатель:?\s*([^\n]+)/i);
+        if (nameMatch) details.recipientName = nameMatch[1].trim();
+
+        // Извлекаем название банка
+        const bankMatch = text.match(/(?:Банк|Bank):\s*([^\n]+)/i);
+        if (bankMatch) details.bankName = bankMatch[1].trim();
+
+        return details;
+    }
+
+    extractAccountDetails(text) {
+        const details = {
+            accountNumber: null,
+            recipientName: null,
+            bankName: null,
+            purpose: null
+        };
+
+        // Извлекаем замаскированный номер счета
+        const accountMatch = text.match(/(?:Счет|Account)[\s:]*\*{16}(\d{4})/i);
+        if (accountMatch) details.accountNumber = `************${accountMatch[1]}`;
+
+        // Извлекаем имя получателя
+        const nameMatch = text.match(/Получатель:?\s*([^\n]+)/i);
+        if (nameMatch) details.recipientName = nameMatch[1].trim();
+
+        // Извлекаем название банка
+        const bankMatch = text.match(/(?:Банк|Bank):\s*([^\n]+)/i);
+        if (bankMatch) details.bankName = bankMatch[1].trim();
+
+        // Извлекаем назначение платежа
+        const purposeMatch = text.match(/Назначение:?\s*([^\n]+)/i);
+        if (purposeMatch) details.purpose = purposeMatch[1].trim();
+
+        return details;
+    }
+
+    async extractQRDetails(pdfData) {
+        const details = {
+            qrType: null,
+            merchantId: null,
+            merchantName: null,
+            terminal: null
+        };
+
+        // Определяем тип QR-кода
+        if (pdfData.text.includes('СБП')) {
+            details.qrType = 'СБП QR';
+        } else if (pdfData.text.includes('Плати QR')) {
+            details.qrType = 'Плати QR';
+        }
+
+        // Извлекаем ID мерчанта
+        const merchantMatch = text.match(/(?:MERCHANT|Мерчант)\s*ID:\s*(\d+)/i);
+        if (merchantMatch) details.merchantId = merchantMatch[1];
+
+        // Извлекаем название мерчанта
+        const nameMatch = text.match(/(?:MERCHANT|Мерчант)\s*NAME:\s*([^\n]+)/i);
+        if (nameMatch) details.merchantName = nameMatch[1].trim();
+
+        // Извлекаем номер терминала
+        const terminalMatch = text.match(/TERMINAL:\s*(\d+)/i);
+        if (terminalMatch) details.terminal = terminalMatch[1];
+
+        return details;
+    }
+
+    // Обновляем метод showResult для отображения метода оплаты
+    showResult(result) {
+        // ... существующий код ...
+
+        // Добавляем информацию о методе оплаты
+        if (result.paymentMethod && result.paymentMethod.isValid) {
+            const paymentMethodHtml = `
+                <div class="payment-method-details">
+                    <h3>Способ оплаты:</h3>
+                    <div class="method-info">
+                        <div class="method-type">${result.paymentMethod.method}</div>
+                        ${this.generatePaymentMethodDetails(result.paymentMethod.details)}
+                    </div>
+                </div>
+            `;
+            
+            // Вставляем после check-details
+            const checkDetails = document.querySelector('.check-details');
+            checkDetails.insertAdjacentHTML('afterend', paymentMethodHtml);
+        }
+    }
+
+    generatePaymentMethodDetails(details) {
+        return Object.entries(details)
+            .filter(([_, value]) => value) // Фильтруем только непустые значения
+            .map(([key, value]) => `
+                <div class="detail-item">
+                    <span class="detail-label">${this.formatDetailLabel(key)}:</span>
+                    <span class="detail-value">${value}</span>
+                </div>
+            `).join('');
+    }
+
+    formatDetailLabel(key) {
+        const labels = {
+            cardNumber: 'Номер карты',
+            cardType: 'Тип карты',
+            authCode: 'Код авторизации',
+            terminal: 'Терминал',
+            phoneNumber: 'Номер телефона',
+            recipientName: 'Получатель',
+            bankName: 'Банк',
+            accountNumber: 'Номер счёта',
+            purpose: 'Назначение платежа',
+            qrType: 'Тип QR-кода',
+            merchantId: 'ID мерчанта',
+            merchantName: 'Название мерчанта',
+            transactionId: 'ID транзакции'
+        };
+        return labels[key] || key;
+    }
 }
 
 // Аналогичные классы для других банков...
@@ -935,7 +1205,8 @@ class SupermaxSberbankValidator {
                     metadata: false
                 },
                 details: {},
-                warnings: []
+                warnings: [],
+                paymentMethod: null
             };
 
             // 1. Проверка структуры PDF
@@ -967,6 +1238,10 @@ class SupermaxSberbankValidator {
             const contentValid = this.validateContent(pdfData);
             result.checks.content = contentValid;
             result.score.details.content = contentValid ? 1 : 0;
+
+            // Определение метода оплаты
+            const paymentMethodResult = await this.validatePaymentMethod(pdfData);
+            result.paymentMethod = paymentMethodResult;
 
             // Расчет итогового результата
             const scores = Object.values(result.score.details);

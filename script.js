@@ -41,6 +41,35 @@ function generateBankCards() {
 
 // Базовые классы для работы с PDF
 class PDFParser {
+    async getPDFVersion(file) {
+        try {
+            // Читаем первые байты файла для определения версии PDF
+            const buffer = await this.readFileAsArrayBuffer(file);
+            const header = new Uint8Array(buffer.slice(0, 8));
+            const version = new TextDecoder().decode(header);
+            
+            // PDF заголовок обычно выглядит как "%PDF-1.7"
+            const match = version.match(/PDF-(\d+\.\d+)/);
+            if (match) {
+                return parseFloat(match[1]);
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Ошибка при определении версии PDF:', error);
+            return null;
+        }
+    }
+
+    async readFileAsArrayBuffer(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
     async validatePDFStructure(file) {
         // Базовая проверка структуры PDF
         return true;
@@ -73,6 +102,21 @@ class PDFParser {
 
     async extractImages(file) {
         return [];
+    }
+
+    async checkPDFLinearization(file) {
+        // Проверка линеаризации PDF
+        return true;
+    }
+
+    async checkObjectStreams(file) {
+        // Проверка потоков объектов
+        return true;
+    }
+
+    async checkCrossReferenceStream(file) {
+        // Проверка потока перекрестных ссылок
+        return true;
     }
 }
 

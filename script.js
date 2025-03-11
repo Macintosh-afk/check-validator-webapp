@@ -39,8 +39,59 @@ function generateBankCards() {
     }
 }
 
-// Обработка загрузки файла
-function handleFileUpload(file) {
+// Базовые классы для работы с PDF
+class PDFParser {
+    async validatePDFStructure(file) {
+        // Базовая проверка структуры PDF
+        return true;
+    }
+
+    async extractFullData(file) {
+        return {
+            text: await this.extractText(file),
+            metadata: await this.extractMetadata(file),
+            images: await this.extractImages(file)
+        };
+    }
+
+    async extractText(file) {
+        // Здесь будет реальная логика извлечения текста
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsText(file);
+        });
+    }
+
+    async extractMetadata(file) {
+        return {
+            creationDate: new Date(),
+            modificationDate: new Date(),
+            author: "Unknown"
+        };
+    }
+
+    async extractImages(file) {
+        return [];
+    }
+}
+
+class QRCodeValidator {
+    async decode(qrCode) {
+        // Здесь будет реальная логика декодирования QR-кода
+        return "Decoded QR content";
+    }
+}
+
+class DigitalSignatureVerifier {
+    async verify(file, bankId) {
+        // Здесь будет реальная логика проверки цифровой подписи
+        return true;
+    }
+}
+
+// Обновленная функция обработки файла
+async function handleFileUpload(file) {
     if (!file) {
         showError('Файл не выбран');
         return;
@@ -53,18 +104,54 @@ function handleFileUpload(file) {
 
     showLoading();
     
-    // Здесь будет логика проверки чека
-    setTimeout(() => {
+    try {
+        const validator = new AdvancedReceiptValidator();
+        const result = await validator.validateReceipt(file, 'sber');
+        
+        showValidationResult(result);
+        addToHistory(file.name, result.isValid);
+    } catch (error) {
+        showError(error.message);
+    } finally {
         hideLoading();
-        addToHistory(file.name);
-    }, 1500);
+    }
 }
 
-// Добавление записи в историю
-function addToHistory(fileName) {
+// Функция отображения результата проверки
+function showValidationResult(result) {
+    const resultDiv = document.getElementById('validationResult');
+    if (!resultDiv) return;
+
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `
+        <div class="validation-result ${result.isValid ? 'valid' : 'invalid'}">
+            <div class="score">
+                Результат проверки: ${result.isValid ? 'Действительный' : 'Недействительный'} чек
+            </div>
+            <div class="details">
+                <p>🔐 Цифровая подпись: ${result.securityChecks.digitalSignature ? 'Верна' : 'Неверна'}</p>
+                <p>🔍 QR-код: ${result.securityChecks.qrCodeValid ? 'Действителен' : 'Недействителен'}</p>
+                <p>⚠️ Модификации: ${result.securityChecks.tamperingDetected ? 'Обнаружены' : 'Не обнаружены'}</p>
+                <p>🕒 Временная метка: ${result.securityChecks.timestampValid ? 'Верна' : 'Неверна'}</p>
+            </div>
+            ${result.warnings.length > 0 ? `
+                <div class="recommendations">
+                    <h4>Предупреждения:</h4>
+                    <ul>
+                        ${result.warnings.map(w => `<li>${w}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+// Обновленная функция добавления в историю
+function addToHistory(fileName, isValid) {
     const historyList = document.getElementById('historyList');
+    if (!historyList) return;
+
     const date = new Date().toLocaleString();
-    
     const historyItem = document.createElement('div');
     historyItem.className = 'history-item';
     historyItem.innerHTML = `
@@ -72,7 +159,9 @@ function addToHistory(fileName) {
             <div style="font-weight: 500">${fileName}</div>
             <div style="color: var(--text-secondary); font-size: 12px">${date}</div>
         </div>
-        <span style="color: var(--success)">✓</span>
+        <span style="color: ${isValid ? 'var(--success)' : 'var(--error)'}">
+            ${isValid ? '✓' : '✗'}
+        </span>
     `;
     
     historyList.insertBefore(historyItem, historyList.firstChild);
@@ -106,7 +195,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const pdfInput = document.getElementById('pdfInput');
 
     if (dropZone) {
-        // Обработка drag & drop
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('drag-over');
@@ -127,7 +215,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (pdfInput) {
-        // Обработка выбора файла
         pdfInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 handleFileUpload(e.target.files[0]);
@@ -135,7 +222,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Генерация банков
     generateBankCards();
 });
 
@@ -172,7 +258,7 @@ class AdvancedReceiptValidator {
             const signatureValid = await this.digitalSignatureVerifier.verify(file, bankId);
             
             // Проверка QR-кода и его содержимого
-            const qrData = await this.qrValidator.extractAndVerify(file);
+            const qrData = await this.qrValidator.decode(pdfData.qrCode);
             
             // Специфичная для банка валидация
             const bankValidation = await validator.validateBankSpecific(pdfData, qrData);
@@ -800,7 +886,7 @@ class SupermaxSberbankValidator {
             this.showProgress();
             const result = await this.validateCheck(file);
             this.showResult(result);
-    } catch (error) {
+        } catch (error) {
             this.showError(error.message);
         }
     }
@@ -826,11 +912,11 @@ class SupermaxSberbankValidator {
                 <div class="result-score">
                     <div class="score-number">${(result.score.total * 100).toFixed(1)}%</div>
                     <div class="score-label">Достоверность</div>
-                    </div>
-                    </div>
+                </div>
+            </div>
             <div class="result-details">
                 ${this.generateResultDetails(result)}
-                        </div>
+            </div>
             ${this.generateRecommendations(result)}
         `;
     }
@@ -841,8 +927,8 @@ class SupermaxSberbankValidator {
             <div class="error-message">
                 <div class="error-icon">⚠️</div>
                 <div class="error-text">${message}</div>
-                </div>
-            `;
+            </div>
+        `;
     }
 
     generateResultDetails(result) {

@@ -839,6 +839,10 @@ class SupermaxSberbankValidator {
     constructor() {
         this.initializeUI();
         this.initializeEventListeners();
+        // Инициализация необходимых валидаторов
+        this.pdfParser = new PDFParser();
+        this.qrValidator = new QRCodeValidator();
+        this.digitalSignatureVerifier = new DigitalSignatureVerifier();
     }
 
     initializeUI() {
@@ -884,17 +888,81 @@ class SupermaxSberbankValidator {
 
         try {
             this.showProgress();
-            const result = await this.validateCheck(file);
+            const result = await this.performUltimateValidation(file);
             this.showResult(result);
         } catch (error) {
             this.showError(error.message);
         }
     }
 
-    async validateCheck(file) {
-        // Здесь вся логика проверки из предыдущего кода
-        const validator = new SupermaxSberbankValidator();
-        return await validator.performUltimateValidation(file);
+    async performUltimateValidation(file) {
+        try {
+            const result = {
+                score: {
+                    total: 0,
+                    details: {}
+                },
+                checks: {
+                    structure: false,
+                    signature: false,
+                    qrCode: false,
+                    content: false,
+                    metadata: false
+                },
+                details: {},
+                warnings: []
+            };
+
+            // 1. Проверка структуры PDF
+            const structureCheck = await this.pdfParser.validatePDFStructure(file);
+            result.checks.structure = structureCheck;
+            result.score.details.structure = structureCheck ? 1 : 0;
+
+            // 2. Проверка цифровой подписи
+            const signatureCheck = await this.digitalSignatureVerifier.verify(file, 'sber');
+            result.checks.signature = signatureCheck;
+            result.score.details.signature = signatureCheck ? 1 : 0;
+
+            // 3. Извлечение и проверка данных
+            const pdfData = await this.pdfParser.extractFullData(file);
+            
+            // 4. Проверка QR-кода
+            let qrValid = false;
+            try {
+                const qrData = await this.qrValidator.decode(pdfData.qrCode);
+                qrValid = qrData && qrData.length > 0;
+                result.details.qrData = qrData;
+            } catch (e) {
+                result.warnings.push('Ошибка при проверке QR-кода');
+            }
+            result.checks.qrCode = qrValid;
+            result.score.details.qrCode = qrValid ? 1 : 0;
+
+            // 5. Проверка содержимого
+            const contentValid = this.validateContent(pdfData);
+            result.checks.content = contentValid;
+            result.score.details.content = contentValid ? 1 : 0;
+
+            // Расчет итогового результата
+            const scores = Object.values(result.score.details);
+            result.score.total = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+            return result;
+        } catch (error) {
+            throw new Error(`Ошибка при проверке чека: ${error.message}`);
+        }
+    }
+
+    validateContent(pdfData) {
+        // Проверка обязательных полей Сбербанка
+        const requiredPatterns = [
+            /ПАО\s+СБЕРБАНК/i,
+            /ОПЕРАЦИЯ\s+ОДОБРЕНА/i,
+            /RRN:\s*\d{12}/,
+            /СУММА/i
+        ];
+
+        return requiredPatterns.every(pattern => pattern.test(pdfData.text));
     }
 
     showProgress() {
@@ -907,17 +975,47 @@ class SupermaxSberbankValidator {
         this.progressSection.classList.add('hidden');
         this.resultSection.classList.remove('hidden');
 
+        const isValid = result.score.total >= 0.8; // Порог успешной проверки
+
         this.resultSection.innerHTML = `
-            <div class="result-header ${result.score.total > 0.95 ? 'success' : 'warning'}">
-                <div class="result-score">
-                    <div class="score-number">${(result.score.total * 100).toFixed(1)}%</div>
-                    <div class="score-label">Достоверность</div>
+            <div class="validation-result ${isValid ? 'valid' : 'invalid'}">
+                <div class="result-header ${isValid ? 'success' : 'warning'}">
+                    <div class="result-status">
+                        <div class="status-icon">${isValid ? '✅' : '❌'}</div>
+                        <div class="status-text">
+                            <h3>${isValid ? 'Чек подлинный' : 'Чек не прошел проверку'}</h3>
+                            <div class="score">Надежность: ${(result.score.total * 100).toFixed(1)}%</div>
+                        </div>
+                    </div>
                 </div>
+
+                <div class="check-details">
+                    <h4>Результаты проверки:</h4>
+                    <div class="check-list">
+                        <div class="check-item ${result.checks.structure ? 'success' : 'failure'}">
+                            ${result.checks.structure ? '✓' : '✗'} Структура PDF
+                        </div>
+                        <div class="check-item ${result.checks.signature ? 'success' : 'failure'}">
+                            ${result.checks.signature ? '✓' : '✗'} Цифровая подпись
+                        </div>
+                        <div class="check-item ${result.checks.qrCode ? 'success' : 'failure'}">
+                            ${result.checks.qrCode ? '✓' : '✗'} QR-код
+                        </div>
+                        <div class="check-item ${result.checks.content ? 'success' : 'failure'}">
+                            ${result.checks.content ? '✓' : '✗'} Содержимое чека
+                        </div>
+                    </div>
+                </div>
+
+                ${result.warnings.length > 0 ? `
+                    <div class="warnings">
+                        <h4>Предупреждения:</h4>
+                        <ul>
+                            ${result.warnings.map(w => `<li>⚠️ ${w}</li>`).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
             </div>
-            <div class="result-details">
-                ${this.generateResultDetails(result)}
-            </div>
-            ${this.generateRecommendations(result)}
         `;
     }
 
@@ -929,14 +1027,6 @@ class SupermaxSberbankValidator {
                 <div class="error-text">${message}</div>
             </div>
         `;
-    }
-
-    generateResultDetails(result) {
-        // Генерация детального отчета
-    }
-
-    generateRecommendations(result) {
-        // Генерация рекомендаций
     }
 }
 

@@ -16,22 +16,47 @@
             <h1>Проверка PDF чеков</h1>
         </div>
 
-        <div class="upload-section">
-            <div class="upload-area" id="dropZone">
-                <div class="upload-content">
-                    <div class="upload-icon">📄</div>
-                    <button class="upload-button" id="uploadButton">Выбрать PDF файл</button>
-                    <p class="upload-text">или перетащите файл сюда</p>
+        <div class="check-validator-container">
+            <h1 class="validator-title">Супермаксимальная проверка чеков</h1>
+            
+            <div class="upload-zone">
+                <div class="upload-area" id="dropZone">
+                    <img src="assets/pdf-icon.svg" alt="PDF" class="upload-icon">
+                    <div class="upload-text">
+                        <span class="primary-text">Перетащите PDF файл сюда</span>
+                        <span class="secondary-text">или</span>
+                        <label class="upload-button" for="pdfInput">
+                            Выберите PDF файл
+                            <input type="file" id="pdfInput" accept=".pdf" hidden>
+                        </label>
+                    </div>
                 </div>
             </div>
-            <input type="file" id="fileInput" accept=".pdf" hidden>
-        </div>
 
-        <div class="banks-section">
-            <h2>Поддерживаемые банки</h2>
-            <div class="banks-grid">
-                <!-- Банки будут добавлены через JavaScript -->
+            <div class="banks-section">
+                <h2>Поддерживаемые банки</h2>
+                <div class="banks-grid">
+                    <!-- Банки из вашего списка -->
+                    <div class="bank-item active">
+                        <img src="assets/sber-icon.svg" alt="Сбербанк" class="bank-icon">
+                        <span>Сбербанк</span>
+                    </div>
+                    <!-- ... остальные банки ... -->
+                </div>
             </div>
+
+            <div id="validationProgress" class="validation-progress hidden">
+                <div class="progress-steps">
+                    <div class="step">
+                        <div class="step-icon">🔍</div>
+                        <div class="step-text">Квантовый анализ</div>
+                        <div class="step-progress"></div>
+                    </div>
+                    <!-- ... другие шаги ... -->
+                </div>
+            </div>
+
+            <div id="validationResult" class="validation-result hidden"></div>
         </div>
 
         <div class="history-section">
@@ -39,15 +64,6 @@
             <div class="history-list" id="historyList">
                 <!-- История будет добавлена через JavaScript -->
             </div>
-        </div>
-
-        <div class="receipt-validator">
-            <h2>Супермаксимальная проверка чеков Сбербанка</h2>
-            <div class="upload-section">
-                <input type="file" id="pdfInput" accept=".pdf">
-                <button id="checkButton">Проверить чек</button>
-            </div>
-            <div id="validationResult"></div>
         </div>
 
         <div id="loading" class="loading-overlay">

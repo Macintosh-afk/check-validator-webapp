@@ -879,54 +879,119 @@ class SberbankAdvancedValidator {
 
     // Обновляем метод showResult для отображения метода оплаты
     showResult(result) {
-        // ... существующий код ...
+        this.progressSection.classList.add('hidden');
+        this.resultSection.classList.remove('hidden');
 
-        // Добавляем информацию о методе оплаты
-        if (result.paymentMethod && result.paymentMethod.isValid) {
-            const paymentMethodHtml = `
-                <div class="payment-method-details">
-                    <h3>Способ оплаты:</h3>
-                    <div class="method-info">
-                        <div class="method-type">${result.paymentMethod.method}</div>
-                        ${this.generatePaymentMethodDetails(result.paymentMethod.details)}
+        const isValid = result.score.total >= 0.8;
+
+        let contentDetails = '';
+        if (result.details.contentValidation) {
+            contentDetails = `
+                <div class="content-validation-details">
+                    <h3>Детальная проверка содержимого:</h3>
+                    <div class="content-checks">
+                        ${Object.entries(result.details.contentValidation.details)
+                            .map(([key, value]) => `
+                                <div class="content-check-item ${value ? 'success' : 'failure'}">
+                                    <span class="check-icon">${value ? '✓' : '✗'}</span>
+                                    <span class="check-name">${this.getContentCheckName(key)}</span>
+                                </div>
+                            `).join('')}
+                    </div>
+                    <div class="content-score">
+                        Оценка содержимого: ${(result.details.contentValidation.score * 100).toFixed(1)}%
                     </div>
                 </div>
             `;
-            
-            // Вставляем после check-details
-            const checkDetails = document.querySelector('.check-details');
-            checkDetails.insertAdjacentHTML('afterend', paymentMethodHtml);
         }
-    }
 
-    generatePaymentMethodDetails(details) {
-        return Object.entries(details)
-            .filter(([_, value]) => value) // Фильтруем только непустые значения
-            .map(([key, value]) => `
-                <div class="detail-item">
-                    <span class="detail-label">${this.formatDetailLabel(key)}:</span>
-                    <span class="detail-value">${value}</span>
+        let pdfVersionInfo = '';
+        if (result.pdfVersion) {
+            pdfVersionInfo = `
+                <div class="pdf-version-info">
+                    <h3>Информация о PDF:</h3>
+                    <p>Версия PDF: ${result.pdfVersion}</p>
+                    ${result.details.pdfV5Specific ? `
+                        <div class="pdf-v5-checks">
+                            <p>Специфичные проверки для PDF v5:</p>
+                            <ul>
+                                <li>Линеаризация: ${result.details.pdfV5Specific.linearized ? '✓' : '✗'}</li>
+                                <li>Потоки объектов: ${result.details.pdfV5Specific.objectStreams ? '✓' : '✗'}</li>
+                                <li>Перекрестные ссылки: ${result.details.pdfV5Specific.crossReferenceStream ? '✓' : '✗'}</li>
+                            </ul>
+                        </div>
+                    ` : ''}
                 </div>
-            `).join('');
+            `;
+        }
+
+        let warningsSection = '';
+        if (result.warnings && result.warnings.length > 0) {
+            warningsSection = `
+                <div class="warnings-section">
+                    <h3>Предупреждения:</h3>
+                    <ul>
+                        ${result.warnings.map(warning => `<li>${warning}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        this.resultSection.innerHTML = `
+            <div class="validation-result ${isValid ? 'valid' : 'invalid'}">
+                <div class="result-header ${isValid ? 'success' : 'warning'}">
+                    <div class="result-status">
+                        <div class="status-icon">${isValid ? '✅' : '❌'}</div>
+                        <div class="status-text">
+                            <h2>
+                                ${isValid ? 'ЧЕК ПОДЛИННЫЙ' : 'ЧЕК НЕ ПРОШЕЛ ПРОВЕРКУ'}
+                            </h2>
+                            <p>Общая надежность: ${(result.score.total * 100).toFixed(1)}%</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="check-details">
+                    <h3>Основные проверки:</h3>
+                    <div class="check-list">
+                        ${Object.entries(result.checks)
+                            .map(([key, value]) => `
+                                <div class="check-item ${value ? 'success' : 'failure'}">
+                                    ${value ? '✓' : '✗'} ${this.getCheckName(key)}
+                                    ${key === 'content' ? `(${(result.score.details.content * 100).toFixed(1)}%)` : ''}
+                                </div>
+                            `).join('')}
+                    </div>
+                </div>
+
+                ${contentDetails}
+                ${pdfVersionInfo}
+                ${warningsSection}
+            </div>
+        `;
     }
 
-    formatDetailLabel(key) {
-        const labels = {
-            cardNumber: 'Номер карты',
-            cardType: 'Тип карты',
-            authCode: 'Код авторизации',
-            terminal: 'Терминал',
-            phoneNumber: 'Номер телефона',
-            recipientName: 'Получатель',
-            bankName: 'Банк',
-            accountNumber: 'Номер счёта',
-            purpose: 'Назначение платежа',
-            qrType: 'Тип QR-кода',
-            merchantId: 'ID мерчанта',
-            merchantName: 'Название мерчанта',
-            transactionId: 'ID транзакции'
+    getContentCheckName(key) {
+        const names = {
+            bankInfo: 'Информация о банке',
+            operationStatus: 'Статус операции',
+            transactionIds: 'Идентификаторы транзакции',
+            amount: 'Сумма операции',
+            datetime: 'Дата и время',
+            cardInfo: 'Информация о карте'
         };
-        return labels[key] || key;
+        return names[key] || key;
+    }
+
+    getCheckName(key) {
+        const names = {
+            structure: 'Структура PDF файла',
+            signature: 'Цифровая подпись',
+            qrCode: 'QR-код чека',
+            content: 'Содержимое чека',
+            metadata: 'Метаданные документа'
+        };
+        return names[key] || key;
     }
 }
 
@@ -1381,7 +1446,60 @@ class SupermaxSberbankValidator {
         this.progressSection.classList.add('hidden');
         this.resultSection.classList.remove('hidden');
 
-        const isValid = result.score.total >= 0.8; // Порог успешной проверки
+        const isValid = result.score.total >= 0.8;
+
+        let contentDetails = '';
+        if (result.details.contentValidation) {
+            contentDetails = `
+                <div class="content-validation-details">
+                    <h3>Детальная проверка содержимого:</h3>
+                    <div class="content-checks">
+                        ${Object.entries(result.details.contentValidation.details)
+                            .map(([key, value]) => `
+                                <div class="content-check-item ${value ? 'success' : 'failure'}">
+                                    <span class="check-icon">${value ? '✓' : '✗'}</span>
+                                    <span class="check-name">${this.getContentCheckName(key)}</span>
+                                </div>
+                            `).join('')}
+                    </div>
+                    <div class="content-score">
+                        Оценка содержимого: ${(result.details.contentValidation.score * 100).toFixed(1)}%
+                    </div>
+                </div>
+            `;
+        }
+
+        let pdfVersionInfo = '';
+        if (result.pdfVersion) {
+            pdfVersionInfo = `
+                <div class="pdf-version-info">
+                    <h3>Информация о PDF:</h3>
+                    <p>Версия PDF: ${result.pdfVersion}</p>
+                    ${result.details.pdfV5Specific ? `
+                        <div class="pdf-v5-checks">
+                            <p>Специфичные проверки для PDF v5:</p>
+                            <ul>
+                                <li>Линеаризация: ${result.details.pdfV5Specific.linearized ? '✓' : '✗'}</li>
+                                <li>Потоки объектов: ${result.details.pdfV5Specific.objectStreams ? '✓' : '✗'}</li>
+                                <li>Перекрестные ссылки: ${result.details.pdfV5Specific.crossReferenceStream ? '✓' : '✗'}</li>
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        let warningsSection = '';
+        if (result.warnings && result.warnings.length > 0) {
+            warningsSection = `
+                <div class="warnings-section">
+                    <h3>Предупреждения:</h3>
+                    <ul>
+                        ${result.warnings.map(warning => `<li>${warning}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
 
         this.resultSection.innerHTML = `
             <div class="validation-result ${isValid ? 'valid' : 'invalid'}">
@@ -1389,30 +1507,55 @@ class SupermaxSberbankValidator {
                     <div class="result-status">
                         <div class="status-icon">${isValid ? '✅' : '❌'}</div>
                         <div class="status-text">
-                            <h2 style="margin: 0; font-size: 24px">
+                            <h2>
                                 ${isValid ? 'ЧЕК ПОДЛИННЫЙ' : 'ЧЕК НЕ ПРОШЕЛ ПРОВЕРКУ'}
                             </h2>
-                            <p style="margin: 5px 0 0 0; font-size: 18px">
-                                Надежность: ${(result.score.total * 100).toFixed(1)}%
-                            </p>
+                            <p>Общая надежность: ${(result.score.total * 100).toFixed(1)}%</p>
                         </div>
                     </div>
                 </div>
 
-                <div class="check-details" style="margin-top: 20px">
-                    <h3>Результаты проверки:</h3>
-                    <div class="check-list" style="margin-top: 10px">
+                <div class="check-details">
+                    <h3>Основные проверки:</h3>
+                    <div class="check-list">
                         ${Object.entries(result.checks)
                             .map(([key, value]) => `
-                                <div class="check-item ${value ? 'success' : 'failure'}" 
-                                     style="padding: 10px; margin: 5px 0; border-radius: 8px">
-                                    ${value ? '✓' : '✗'} ${getCheckName(key)}
+                                <div class="check-item ${value ? 'success' : 'failure'}">
+                                    ${value ? '✓' : '✗'} ${this.getCheckName(key)}
+                                    ${key === 'content' ? `(${(result.score.details.content * 100).toFixed(1)}%)` : ''}
                                 </div>
                             `).join('')}
                     </div>
                 </div>
+
+                ${contentDetails}
+                ${pdfVersionInfo}
+                ${warningsSection}
             </div>
         `;
+    }
+
+    getContentCheckName(key) {
+        const names = {
+            bankInfo: 'Информация о банке',
+            operationStatus: 'Статус операции',
+            transactionIds: 'Идентификаторы транзакции',
+            amount: 'Сумма операции',
+            datetime: 'Дата и время',
+            cardInfo: 'Информация о карте'
+        };
+        return names[key] || key;
+    }
+
+    getCheckName(key) {
+        const names = {
+            structure: 'Структура PDF файла',
+            signature: 'Цифровая подпись',
+            qrCode: 'QR-код чека',
+            content: 'Содержимое чека',
+            metadata: 'Метаданные документа'
+        };
+        return names[key] || key;
     }
 
     showError(message) {

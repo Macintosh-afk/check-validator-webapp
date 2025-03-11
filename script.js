@@ -485,66 +485,86 @@ class SberbankAdvancedValidator {
     }
 
     async validateContent(pdfData) {
-        const contentChecks = {
-            requiredFields: false,
-            amountFormat: false,
-            dateTime: false,
-            cardData: false,
-            merchantInfo: false,
-            bankDetails: false
+        const contentValidation = {
+            isValid: false,
+            details: {},
+            score: 0
         };
 
-        // 1. Проверка обязательных полей Сбербанка
-        const requiredFields = {
-            bankName: /ПАО\s+СБЕРБАНК/i,
-            operation: /ОПЕРАЦИЯ\s+ОДОБРЕНА/i,
-            rrn: /RRN:\s*\d{12}/,
-            authCode: /AUTH\.CODE:\s*\d{6}/,
-            terminal: /TERMINAL:\s*\d{8}/,
-            merchant: /MERCHANT\s+ID:\s*\d{15}/
+        // Расширенные паттерны для проверки содержимого чека Сбербанка
+        const patterns = {
+            // Основная информация
+            bankInfo: {
+                patterns: [
+                    /ПАО\s+СБЕРБАНК/i,
+                    /СБЕРБАНК/i,
+                    /SBERBANK/i
+                ],
+                weight: 0.2
+            },
+            operationStatus: {
+                patterns: [
+                    /ОПЕРАЦИЯ\s+ОДОБРЕНА/i,
+                    /ОДОБРЕНО/i,
+                    /APPROVED/i
+                ],
+                weight: 0.2
+            },
+            // Идентификаторы операции
+            transactionIds: {
+                patterns: [
+                    /RRN:\s*\d{12}/,
+                    /AUTH\.CODE:\s*\d{6}/,
+                    /TERMINAL:\s*\d{8}/
+                ],
+                weight: 0.15
+            },
+            // Финансовая информация
+            amount: {
+                patterns: [
+                    /СУММА:?\s*[\d\s,.]+\s*(?:РУБ|RUB)/i,
+                    /ИТОГО:?\s*[\d\s,.]+/i,
+                    /TOTAL:?\s*[\d\s,.]+/i
+                ],
+                weight: 0.25
+            },
+            // Дата и время
+            datetime: {
+                patterns: [
+                    /\d{2}\.\d{2}\.\d{2,4}\s+\d{2}:\d{2}(?::\d{2})?/,
+                    /\d{2}\/\d{2}\/\d{2,4}\s+\d{2}:\d{2}/
+                ],
+                weight: 0.1
+            },
+            // Информация о карте (если есть)
+            cardInfo: {
+                patterns: [
+                    /КАРТА\s*\*{4}\d{4}/i,
+                    /CARD\s*\*{4}\d{4}/i
+                ],
+                weight: 0.1
+            }
         };
 
-        contentChecks.requiredFields = Object.entries(requiredFields)
-            .map(([field, regex]) => ({
-                field,
-                valid: regex.test(pdfData.text),
-                value: pdfData.text.match(regex)?.[0]
-            }));
+        let totalScore = 0;
+        let totalWeight = 0;
 
-        // 2. Проверка формата суммы
-        const amountCheck = this.validateAmount(pdfData.text);
-        contentChecks.amountFormat = {
-            valid: amountCheck.valid,
-            amount: amountCheck.amount,
-            currency: amountCheck.currency,
-            format: amountCheck.format
-        };
+        // Проверяем каждую группу паттернов
+        for (const [key, group] of Object.entries(patterns)) {
+            const groupValid = group.patterns.some(pattern => pattern.test(pdfData.text));
+            contentValidation.details[key] = groupValid;
+            
+            if (groupValid) {
+                totalScore += group.weight;
+            }
+            totalWeight += group.weight;
+        }
 
-        // 3. Проверка даты и времени
-        const dateTimeCheck = this.validateDateTime(pdfData.text);
-        contentChecks.dateTime = {
-            valid: dateTimeCheck.valid,
-            timestamp: dateTimeCheck.timestamp,
-            timezone: dateTimeCheck.timezone,
-            format: dateTimeCheck.format
-        };
+        // Вычисляем финальный счет
+        contentValidation.score = totalScore / totalWeight;
+        contentValidation.isValid = contentValidation.score >= 0.8; // Порог в 80%
 
-        // 4. Проверка данных карты
-        const cardCheck = this.validateCardData(pdfData.text);
-        contentChecks.cardData = {
-            valid: cardCheck.valid,
-            maskedPan: cardCheck.maskedPan,
-            cardType: cardCheck.cardType,
-            issuer: cardCheck.issuer
-        };
-
-        // 5. Проверка информации о мерчанте
-        contentChecks.merchantInfo = await this.validateMerchantInfo(pdfData);
-
-        // 6. Проверка банковских реквизитов
-        contentChecks.bankDetails = await this.validateBankDetails(pdfData);
-
-        return contentChecks;
+        return contentValidation;
     }
 
     async performVisualChecks(pdfImages) {
@@ -1206,8 +1226,13 @@ class SupermaxSberbankValidator {
                 },
                 details: {},
                 warnings: [],
-                paymentMethod: null
+                paymentMethod: null,
+                pdfVersion: null
             };
+
+            // Определяем версию PDF
+            const pdfVersion = await this.pdfParser.getPDFVersion(file);
+            result.pdfVersion = pdfVersion;
 
             // 1. Проверка структуры PDF
             const structureCheck = await this.pdfParser.validatePDFStructure(file);
@@ -1234,18 +1259,28 @@ class SupermaxSberbankValidator {
             result.checks.qrCode = qrValid;
             result.score.details.qrCode = qrValid ? 1 : 0;
 
-            // 5. Проверка содержимого
-            const contentValid = this.validateContent(pdfData);
-            result.checks.content = contentValid;
-            result.score.details.content = contentValid ? 1 : 0;
+            // 5. Проверка содержимого с учетом версии PDF
+            const contentValidation = this.validateContent(pdfData);
+            result.checks.content = contentValidation.isValid;
+            result.score.details.content = contentValidation.score;
+            result.details.contentValidation = contentValidation.details;
 
-            // Определение метода оплаты
+            // 6. Определение метода оплаты
             const paymentMethodResult = await this.validatePaymentMethod(pdfData);
             result.paymentMethod = paymentMethodResult;
 
-            // Расчет итогового результата
+            // Расчет итогового результата с учетом версии PDF
             const scores = Object.values(result.score.details);
             result.score.total = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+            // Добавляем специфичные для PDF v5 проверки
+            if (pdfVersion === 5) {
+                result.details.pdfV5Specific = {
+                    linearized: await this.checkPDFLinearization(file),
+                    objectStreams: await this.checkObjectStreams(file),
+                    crossReferenceStream: await this.checkCrossReferenceStream(file)
+                };
+            }
 
             return result;
         } catch (error) {
@@ -1254,15 +1289,86 @@ class SupermaxSberbankValidator {
     }
 
     validateContent(pdfData) {
-        // Проверка обязательных полей Сбербанка
-        const requiredPatterns = [
-            /ПАО\s+СБЕРБАНК/i,
-            /ОПЕРАЦИЯ\s+ОДОБРЕНА/i,
-            /RRN:\s*\d{12}/,
-            /СУММА/i
-        ];
+        const contentValidation = {
+            isValid: false,
+            details: {},
+            score: 0
+        };
 
-        return requiredPatterns.every(pattern => pattern.test(pdfData.text));
+        // Расширенные паттерны для проверки содержимого чека Сбербанка
+        const patterns = {
+            // Основная информация
+            bankInfo: {
+                patterns: [
+                    /ПАО\s+СБЕРБАНК/i,
+                    /СБЕРБАНК/i,
+                    /SBERBANK/i
+                ],
+                weight: 0.2
+            },
+            operationStatus: {
+                patterns: [
+                    /ОПЕРАЦИЯ\s+ОДОБРЕНА/i,
+                    /ОДОБРЕНО/i,
+                    /APPROVED/i
+                ],
+                weight: 0.2
+            },
+            // Идентификаторы операции
+            transactionIds: {
+                patterns: [
+                    /RRN:\s*\d{12}/,
+                    /AUTH\.CODE:\s*\d{6}/,
+                    /TERMINAL:\s*\d{8}/
+                ],
+                weight: 0.15
+            },
+            // Финансовая информация
+            amount: {
+                patterns: [
+                    /СУММА:?\s*[\d\s,.]+\s*(?:РУБ|RUB)/i,
+                    /ИТОГО:?\s*[\d\s,.]+/i,
+                    /TOTAL:?\s*[\d\s,.]+/i
+                ],
+                weight: 0.25
+            },
+            // Дата и время
+            datetime: {
+                patterns: [
+                    /\d{2}\.\d{2}\.\d{2,4}\s+\d{2}:\d{2}(?::\d{2})?/,
+                    /\d{2}\/\d{2}\/\d{2,4}\s+\d{2}:\d{2}/
+                ],
+                weight: 0.1
+            },
+            // Информация о карте (если есть)
+            cardInfo: {
+                patterns: [
+                    /КАРТА\s*\*{4}\d{4}/i,
+                    /CARD\s*\*{4}\d{4}/i
+                ],
+                weight: 0.1
+            }
+        };
+
+        let totalScore = 0;
+        let totalWeight = 0;
+
+        // Проверяем каждую группу паттернов
+        for (const [key, group] of Object.entries(patterns)) {
+            const groupValid = group.patterns.some(pattern => pattern.test(pdfData.text));
+            contentValidation.details[key] = groupValid;
+            
+            if (groupValid) {
+                totalScore += group.weight;
+            }
+            totalWeight += group.weight;
+        }
+
+        // Вычисляем финальный счет
+        contentValidation.score = totalScore / totalWeight;
+        contentValidation.isValid = contentValidation.score >= 0.8; // Порог в 80%
+
+        return contentValidation;
     }
 
     showProgress() {

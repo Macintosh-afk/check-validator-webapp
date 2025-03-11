@@ -105,45 +105,70 @@ async function handleFileUpload(file) {
     showLoading();
     
     try {
-        const validator = new AdvancedReceiptValidator();
-        const result = await validator.validateReceipt(file, 'sber');
+        // Создаем экземпляр правильного валидатора
+        const validator = new SupermaxSberbankValidator();
+        const result = await validator.performUltimateValidation(file);
         
-        showValidationResult(result);
-        addToHistory(file.name, result.isValid);
+        // Показываем результат в понятном виде
+        const resultDiv = document.getElementById('validationResult');
+        resultDiv.classList.remove('hidden');
+        
+        // Определяем, прошел ли чек проверку
+        const isValid = result.score.total >= 0.8; // Порог в 80%
+
+        resultDiv.innerHTML = `
+            <div class="validation-result ${isValid ? 'valid' : 'invalid'}">
+                <div class="result-header ${isValid ? 'success' : 'warning'}">
+                    <div class="result-status">
+                        <div class="status-icon" style="font-size: 48px; margin-right: 20px">
+                            ${isValid ? '✅' : '❌'}
+                        </div>
+                        <div class="status-text">
+                            <h2 style="margin: 0; font-size: 24px">
+                                ${isValid ? 'ЧЕК ПОДЛИННЫЙ' : 'ЧЕК НЕ ПРОШЕЛ ПРОВЕРКУ'}
+                            </h2>
+                            <p style="margin: 5px 0 0 0; font-size: 18px">
+                                Надежность: ${(result.score.total * 100).toFixed(1)}%
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="check-details" style="margin-top: 20px">
+                    <h3>Результаты проверки:</h3>
+                    <div class="check-list" style="margin-top: 10px">
+                        ${Object.entries(result.checks)
+                            .map(([key, value]) => `
+                                <div class="check-item ${value ? 'success' : 'failure'}" 
+                                     style="padding: 10px; margin: 5px 0; border-radius: 8px">
+                                    ${value ? '✓' : '✗'} ${getCheckName(key)}
+                                </div>
+                            `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Добавляем в историю
+        addToHistory(file.name, isValid);
+        
     } catch (error) {
-        showError(error.message);
+        showError(`Ошибка при проверке чека: ${error.message}`);
     } finally {
         hideLoading();
     }
 }
 
-// Функция отображения результата проверки
-function showValidationResult(result) {
-    const resultDiv = document.getElementById('validationResult');
-    if (!resultDiv) return;
-
-    resultDiv.classList.remove('hidden');
-    resultDiv.innerHTML = `
-        <div class="validation-result ${result.isValid ? 'valid' : 'invalid'}">
-            <div class="score">
-                Результат проверки: ${result.isValid ? 'Действительный' : 'Недействительный'} чек
-            </div>
-            <div class="details">
-                <p>🔐 Цифровая подпись: ${result.securityChecks.digitalSignature ? 'Верна' : 'Неверна'}</p>
-                <p>🔍 QR-код: ${result.securityChecks.qrCodeValid ? 'Действителен' : 'Недействителен'}</p>
-                <p>⚠️ Модификации: ${result.securityChecks.tamperingDetected ? 'Обнаружены' : 'Не обнаружены'}</p>
-                <p>🕒 Временная метка: ${result.securityChecks.timestampValid ? 'Верна' : 'Неверна'}</p>
-            </div>
-            ${result.warnings.length > 0 ? `
-                <div class="recommendations">
-                    <h4>Предупреждения:</h4>
-                    <ul>
-                        ${result.warnings.map(w => `<li>${w}</li>`).join('')}
-                    </ul>
-                </div>
-            ` : ''}
-        </div>
-    `;
+// Вспомогательная функция для перевода названий проверок
+function getCheckName(check) {
+    const names = {
+        structure: 'Структура PDF файла',
+        signature: 'Цифровая подпись',
+        qrCode: 'QR-код чека',
+        content: 'Содержимое чека',
+        metadata: 'Метаданные документа'
+    };
+    return names[check] || check;
 }
 
 // Обновленная функция добавления в историю
@@ -983,38 +1008,28 @@ class SupermaxSberbankValidator {
                     <div class="result-status">
                         <div class="status-icon">${isValid ? '✅' : '❌'}</div>
                         <div class="status-text">
-                            <h3>${isValid ? 'Чек подлинный' : 'Чек не прошел проверку'}</h3>
-                            <div class="score">Надежность: ${(result.score.total * 100).toFixed(1)}%</div>
+                            <h2 style="margin: 0; font-size: 24px">
+                                ${isValid ? 'ЧЕК ПОДЛИННЫЙ' : 'ЧЕК НЕ ПРОШЕЛ ПРОВЕРКУ'}
+                            </h2>
+                            <p style="margin: 5px 0 0 0; font-size: 18px">
+                                Надежность: ${(result.score.total * 100).toFixed(1)}%
+                            </p>
                         </div>
                     </div>
                 </div>
 
-                <div class="check-details">
-                    <h4>Результаты проверки:</h4>
-                    <div class="check-list">
-                        <div class="check-item ${result.checks.structure ? 'success' : 'failure'}">
-                            ${result.checks.structure ? '✓' : '✗'} Структура PDF
-                        </div>
-                        <div class="check-item ${result.checks.signature ? 'success' : 'failure'}">
-                            ${result.checks.signature ? '✓' : '✗'} Цифровая подпись
-                        </div>
-                        <div class="check-item ${result.checks.qrCode ? 'success' : 'failure'}">
-                            ${result.checks.qrCode ? '✓' : '✗'} QR-код
-                        </div>
-                        <div class="check-item ${result.checks.content ? 'success' : 'failure'}">
-                            ${result.checks.content ? '✓' : '✗'} Содержимое чека
-                        </div>
+                <div class="check-details" style="margin-top: 20px">
+                    <h3>Результаты проверки:</h3>
+                    <div class="check-list" style="margin-top: 10px">
+                        ${Object.entries(result.checks)
+                            .map(([key, value]) => `
+                                <div class="check-item ${value ? 'success' : 'failure'}" 
+                                     style="padding: 10px; margin: 5px 0; border-radius: 8px">
+                                    ${value ? '✓' : '✗'} ${getCheckName(key)}
+                                </div>
+                            `).join('')}
                     </div>
                 </div>
-
-                ${result.warnings.length > 0 ? `
-                    <div class="warnings">
-                        <h4>Предупреждения:</h4>
-                        <ul>
-                            ${result.warnings.map(w => `<li>⚠️ ${w}</li>`).join('')}
-                        </ul>
-                    </div>
-                ` : ''}
             </div>
         `;
     }

@@ -118,6 +118,17 @@ class PDFParser {
         // Проверка потока перекрестных ссылок
         return true;
     }
+
+    async checkEditingTraces(file) {
+        return { found: false };
+    }
+
+    async getMetadata(file) {
+        return {
+            creationDate: new Date(),
+            modificationDate: new Date()
+        };
+    }
 }
 
 class QRCodeValidator {
